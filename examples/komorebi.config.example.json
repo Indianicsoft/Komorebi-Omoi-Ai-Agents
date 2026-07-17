@@ -1,0 +1,37 @@
+{
+  "$schema": "./komorebi.schema.json",
+  "gateway": {
+    "authToken": "kore_admin_super_secret_token_change_me_12345",
+    "host": "127.0.0.1",
+    "port": 8000
+  },
+  "bus": {
+    "type": "embedded",
+    "port": 6379,
+    "maxMessageSizeKb": 256
+  },
+  "telegram": {
+    "sharedToken": "1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ-example_shared",
+    "bots": []
+  },
+  "mcpServers": {
+    "filesystem": {
+      "command": "node",
+      "args": [
+        "/usr/local/lib/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js",
+        "/media/rohith/DataVolume1/komorebi omoi /workspaces"
+      ]
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-brave-search"
+      ],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      }
+    }
+  },
+  "agents": []
+}

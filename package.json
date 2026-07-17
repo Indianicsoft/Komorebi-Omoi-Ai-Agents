@@ -1,0 +1,18 @@
+{
+  "name": "komorebi-omoi",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Self-hosted, open-source agentic AI runtime for Raspberry Pi 5",
+  "scripts": {
+    "dev:gateway": "npm run dev --prefix gateway",
+    "build:gateway": "npm run build --prefix gateway"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "typescript": "^5.3.3",
+    "vitest": "^4.1.10",
+    "ws": "^8.21.0"
+  }
+}

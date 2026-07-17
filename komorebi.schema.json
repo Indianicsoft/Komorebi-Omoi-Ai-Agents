@@ -1,0 +1,211 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KomorebiConfig",
+  "description": "Configuration schema for the Komorebi Omoi Agentic AI Runtime.",
+  "type": "object",
+  "properties": {
+    "gateway": {
+      "type": "object",
+      "description": "Gateway and Orchestrator service settings",
+      "properties": {
+        "authToken": {
+          "type": "string",
+          "description": "Secure secret token used for CLI and internal authorization."
+        },
+        "host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Listening host address for the orchestrator."
+        },
+        "port": {
+          "type": "integer",
+          "default": 8000,
+          "description": "Port on which the gateway API listens."
+        }
+      },
+      "required": ["authToken"]
+    },
+    "bus": {
+      "type": "object",
+      "description": "Inter-agent communication bus configuration.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["redis", "embedded", "nats"],
+          "default": "embedded",
+          "description": "Underlying message transport. 'embedded' uses an in-memory/IPC broker for minimal memory overhead."
+        },
+        "url": {
+          "type": "string",
+          "description": "Connection string for external brokers (e.g. redis://localhost:6379)."
+        },
+        "port": {
+          "type": "integer",
+          "default": 6379,
+          "description": "Port used if launching an embedded Redis or event bus server."
+        },
+        "maxMessageSizeKb": {
+          "type": "integer",
+          "default": 256,
+          "description": "Maximum size of payload allowed on the bus to prevent OOM."
+        }
+      },
+      "required": ["type"]
+    },
+    "telegram": {
+      "type": "object",
+      "description": "Telegram bot settings. You can define a single shared bot routing to multiple agents, or separate bots per agent.",
+      "properties": {
+        "sharedToken": {
+          "type": "string",
+          "description": "Bot token used for a single-bot deployment routing dynamically based on Chat ID / Command."
+        },
+        "bots": {
+          "type": "array",
+          "description": "Config bindings for multiple Telegram bots mapped to individual agents.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "token": {
+                "type": "string",
+                "description": "Telegram bot token issued by BotFather."
+              },
+              "agentId": {
+                "type": "string",
+                "description": "ID of the agent bound to this bot."
+              },
+              "allowedUserIds": {
+                "type": "array",
+                "description": "List of Telegram user IDs authorized to interact with this agent.",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            },
+            "required": ["token", "agentId"]
+          }
+        }
+      }
+    },
+    "mcpServers": {
+      "type": "object",
+      "description": "Model Context Protocol (MCP) server definitions, available to all agents.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Command to start the local MCP server (e.g., node, python3)."
+          },
+          "args": {
+            "type": "array",
+            "description": "Arguments passed to the command.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "env": {
+            "type": "object",
+            "description": "Environment variables required by the server.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "url": {
+            "type": "string",
+            "description": "SSE endpoint URL for remote MCP servers."
+          }
+        },
+        "anyOf": [
+          { "required": ["command"] },
+          { "required": ["url"] }
+        ]
+      }
+    },
+    "agents": {
+      "type": "array",
+      "description": "List of active agent instances. Maximum of 10 recommended for Pi 5.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-_]+$",
+            "description": "Unique identifier for the agent instance."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable name of the agent."
+          },
+          "workspace": {
+            "type": "string",
+            "description": "Absolute directory path where this agent's workspace files and caches are stored."
+          },
+          "model": {
+            "type": "object",
+            "description": "LLM provider settings.",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": ["gemini", "openai", "anthropic"],
+                "default": "gemini"
+              },
+              "name": {
+                "type": "string",
+                "default": "gemini-3.5-flash",
+                "description": "The exact model name to invoke."
+              },
+              "apiKey": {
+                "type": "string",
+                "description": "API key for the provider. Can be an environment variable reference like '${GEMINI_API_KEY}'."
+              },
+              "temperature": {
+                "type": "number",
+                "default": 0.2
+              },
+              "maxOutputTokens": {
+                "type": "integer",
+                "default": 2048
+              }
+            },
+            "required": ["provider", "name"]
+          },
+          "toolPolicy": {
+            "type": "object",
+            "description": "Execution permissions and restrictions for the agent's ReAct loop tools.",
+            "properties": {
+              "sandboxType": {
+                "type": "string",
+                "enum": ["none", "bubblewrap", "docker"],
+                "default": "bubblewrap",
+                "description": "Sandbox framework used. 'bubblewrap' is recommended for Pi 5."
+              },
+              "allowedTools": {
+                "type": "array",
+                "description": "List of MCP tools the agent can execute. Use ['*'] for all.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "networkAccess": {
+                "type": "boolean",
+                "default": false,
+                "description": "Allows sandbox execution environment to access the external web."
+              },
+              "readWritePaths": {
+                "type": "array",
+                "description": "Additional host directories the agent is allowed to access.",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["sandboxType"]
+          }
+        },
+        "required": ["id", "name", "workspace", "model", "toolPolicy"]
+      }
+    }
+  },
+  "required": ["gateway", "bus", "agents"]
+}

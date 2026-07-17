@@ -1,0 +1,14 @@
+{
+  "name": "bus",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "tsc -w",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "redis": "^4.6.12"
+  }
+}

@@ -1,0 +1,28 @@
+[Unit]
+Description=Komorebi Omoi Agent Runtime Session - %I
+After=komorebi-gateway.service
+Requires=komorebi-gateway.service
+
+[Service]
+Type=simple
+User=rohith
+Group=rohith
+WorkingDirectory=/media/rohith/DataVolume1/komorebi omoi /agent-runtime
+Environment=NODE_ENV=production
+Environment=OPENKOMOREBI_GATEWAY_TOKEN=kore_admin_super_secret_token_change_me_12345
+# Spawns node agent-runtime targeting specific agent instance %I
+ExecStart=/usr/bin/node dist/main.js --agent-id %I --session-id %I_system --workspace /home/rohith/.komorebi/agents/%I
+Restart=always
+RestartSec=10
+
+# --- Resource Governance (cgroups) ---
+# Limits physical RAM usage of this agent to 500MB max
+MemoryMax=500M
+MemorySwapMax=100M
+# Limits CPU consumption of this agent to 50% of a single core max
+CPUQuota=50%
+# Runs process with a lower processing priority (nice value 10)
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

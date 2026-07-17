@@ -1,0 +1,24 @@
+{
+  "name": "agent-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "types": "dist/main.d.ts",
+  "scripts": {
+    "dev": "node node_modules/typescript/bin/tsc && node dist/main.js",
+    "build": "node node_modules/typescript/bin/tsc"
+  },
+  "dependencies": {
+    "@google/generative-ai": "*",
+    "@modelcontextprotocol/sdk": "*",
+    "dotenv": "^16.4.5",
+    "ws": "^8.16.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.3.3"
+  }
+}

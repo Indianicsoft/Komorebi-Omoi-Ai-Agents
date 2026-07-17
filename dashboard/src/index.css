@@ -1,0 +1,173 @@
+:root {
+  /* Default: Dark Theme */
+  --bg-primary: #0b0c10;
+  --bg-secondary: #12141c;
+  --bg-tertiary: #1a1d29;
+  --bg-card: rgba(22, 26, 38, 0.7);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --text-primary: #f0f3f8;
+  --text-secondary: #a0aab8;
+  --text-muted: #64748b;
+  
+  --accent-primary: #8a2be2;
+  --accent-secondary: #00f0ff;
+  --accent-glow: rgba(138, 43, 226, 0.2);
+  --accent-secondary-glow: rgba(0, 240, 255, 0.2);
+  
+  --status-green: #00ff66;
+  --status-green-glow: rgba(0, 255, 102, 0.2);
+  --status-yellow: #ffcc00;
+  --status-red: #ff3366;
+  --status-red-glow: rgba(255, 51, 102, 0.2);
+
+  --sidebar-width: 240px;
+  --header-height: 60px;
+  --border-radius: 12px;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-display: 'Outfit', var(--font-sans);
+  --font-mono: 'Fira Code', monospace;
+  --transition-speed: 0.2s;
+  
+  font-family: var(--font-sans);
+  color-scheme: dark;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Light Theme overrides */
+:root[theme="light"] {
+  --bg-primary: #f5f7fb;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #edf1f6;
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --border-color: rgba(0, 0, 0, 0.08);
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  
+  --accent-primary: #6366f1;
+  --accent-secondary: #0ea5e9;
+  --accent-glow: rgba(99, 102, 241, 0.15);
+  --accent-secondary-glow: rgba(14, 165, 233, 0.15);
+  
+  --status-green: #10b981;
+  --status-green-glow: rgba(16, 185, 129, 0.15);
+  --status-yellow: #f59e0b;
+  --status-red: #ef4444;
+  --status-red-glow: rgba(239, 68, 68, 0.15);
+  
+  color-scheme: light;
+}
+
+/* Komorebi Theme overrides (Nature / Forest / Glow Accent) */
+:root[theme="komorebi"] {
+  --bg-primary: #060c07;
+  --bg-secondary: #0d1a10;
+  --bg-tertiary: #132417;
+  --bg-card: rgba(13, 26, 16, 0.7);
+  --border-color: rgba(16, 185, 129, 0.15);
+  --text-primary: #e6f4ea;
+  --text-secondary: #a3c9ae;
+  --text-muted: #5e8469;
+  
+  --accent-primary: #10b981;
+  --accent-secondary: #a7f3d0;
+  --accent-glow: rgba(16, 185, 129, 0.25);
+  --accent-secondary-glow: rgba(167, 243, 208, 0.25);
+  
+  --status-green: #34d399;
+  --status-green-glow: rgba(52, 211, 153, 0.25);
+  --status-yellow: #fbbf24;
+  --status-red: #f87171;
+  --status-red-glow: rgba(248, 113, 113, 0.25);
+  
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Background Glowing Blurs (Cyberpunk style) */
+.glow-blur {
+  position: absolute;
+  width: 30vw;
+  height: 30vw;
+  border-radius: 50%;
+  filter: blur(150px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.15;
+}
+
+.glow-left {
+  top: 10%;
+  left: 5%;
+  background: var(--accent-primary);
+}
+
+.glow-right {
+  bottom: 10%;
+  right: 5%;
+  background: var(--accent-secondary);
+}
+
+/* Animations */
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+@keyframes pulseGlow {
+  0% { box-shadow: 0 0 0 0 var(--status-green-glow); }
+  70% { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@keyframes pulseRedGlow {
+  0% { box-shadow: 0 0 0 0 var(--status-red-glow); }
+  70% { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* Responsive iframe styling */
+iframe {
+  border: none;
+  width: 100%;
+  height: 100%;
+}

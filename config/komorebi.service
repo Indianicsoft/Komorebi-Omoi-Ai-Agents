@@ -1,0 +1,19 @@
+[Unit]
+Description=Komorebi Omoi Gateway & Orchestrator Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=rohith
+Group=rohith
+WorkingDirectory=/media/rohith/DataVolume1/komorebi omoi /gateway
+Environment=NODE_ENV=production
+Environment=OPENKOMOREBI_GATEWAY_TOKEN=kore_admin_super_secret_token_change_me_12345
+# Modify path to node binary if installed in non-standard location
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=10
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

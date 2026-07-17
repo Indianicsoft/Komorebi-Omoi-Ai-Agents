@@ -1,0 +1,421 @@
+import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
+import { join, dirname, basename } from "node:path";
+import { homedir } from "node:os";
+// Term-Frequency Cosine Similarity for Skill Deduplication
+export function calculateTextSimilarity(text1, text2) {
+    const getTokens = (text) => {
+        return text.toLowerCase()
+            .replace(/[^a-z0-9\s]/g, "")
+            .split(/\s+/)
+            .filter(t => t.length > 2);
+    };
+    const tokens1 = getTokens(text1);
+    const tokens2 = getTokens(text2);
+    const vocab = new Set([...tokens1, ...tokens2]);
+    const freq1 = new Map();
+    const freq2 = new Map();
+    for (const t of tokens1)
+        freq1.set(t, (freq1.get(t) || 0) + 1);
+    for (const t of tokens2)
+        freq2.set(t, (freq2.get(t) || 0) + 1);
+    let dotProduct = 0;
+    let mag1 = 0;
+    let mag2 = 0;
+    for (const t of vocab) {
+        const v1 = freq1.get(t) || 0;
+        const v2 = freq2.get(t) || 0;
+        dotProduct += v1 * v2;
+        mag1 += v1 * v1;
+        mag2 += v2 * v2;
+    }
+    if (mag1 === 0 || mag2 === 0)
+        return 0;
+    return dotProduct / (Math.sqrt(mag1) * Math.sqrt(mag2));
+}
+// Log skill usage telemetry
+export function logSkillUsage(agentId, slug, action, success) {
+    const agentDir = join(homedir(), ".komorebi", "agents", agentId);
+    const logPath = join(agentDir, "skills", "usage-log.jsonl");
+    const logDir = dirname(logPath);
+    if (!existsSync(logDir)) {
+        mkdirSync(logDir, { recursive: true });
+    }
+    const entry = JSON.stringify({
+        timestamp: Date.now(),
+        slug,
+        action,
+        success
+    }) + "\n";
+    try {
+        appendFileSyncShim(logPath, entry);
+    }
+    catch { }
+}
+function appendFileSyncShim(path, content) {
+    appendFileSyncInternal(path, content);
+}
+import { appendFileSync } from "node:fs";
+function appendFileSyncInternal(path, content) {
+    appendFileSync(path, content, "utf-8");
+}
+// 1. Reflection Module: Trigger Classifier
+export function checkReflectionTriggers(toolCalls, nextUserMessage) {
+    // Trigger A: Complexity (5+ tool calls)
+    if (toolCalls.length >= 5) {
+        return { triggered: true, type: "complexity" };
+    }
+    // Trigger B: Recovered Failure
+    const firstErrorIdx = toolCalls.findIndex(tc => tc.isError || tc.output.toLowerCase().includes("error"));
+    if (firstErrorIdx !== -1) {
+        const subsequentSuccess = toolCalls.slice(firstErrorIdx + 1).some(tc => !tc.isError && !tc.output.toLowerCase().includes("error"));
+        if (subsequentSuccess) {
+            return { triggered: true, type: "recovery" };
+        }
+    }
+    // Trigger C: Manual Correction
+    if (nextUserMessage) {
+        const correctionKeywords = ["no, actually", "that's wrong", "instead do", "incorrect", "wrong", "override", "correction"];
+        const text = nextUserMessage.toLowerCase();
+        if (correctionKeywords.some(kw => text.includes(kw))) {
+            return { triggered: true, type: "correction" };
+        }
+    }
+    return { triggered: false };
+}
+// 2. Skill Extraction from Experience
+export async function runReflectionExtraction(trace, modelProvider, memoryStack) {
+    console.log(`[ClosedLearningLoop - ${trace.agentId}] Running background skill extraction Reflection job...`);
+    const prompt = `You are a senior AI learning-systems architect.
+Analyze the following execution trace of an agent's turn (user query, tool calls, outcomes, and final response).
+Identify any reusable multi-step workflow or strategy that was successfully executed to fulfill the task.
+Output a skill document in the standard SKILL.md format.
+
+Trace:
+- User Query: ${trace.userQuery}
+${trace.correction ? `- User Correction: ${trace.correction}\n` : ""}
+- Tool Calls:
+${trace.toolCalls.map((tc, idx) => `[Call ${idx + 1}] Tool: ${tc.name}\n  Args: ${JSON.stringify(tc.arguments)}\n  Output: ${tc.output.slice(0, 400)}`).join("\n")}
+- Final Response: ${trace.finalResponse}
+
+Return ONLY valid markdown in this format:
+# [Skill Name]
+[One-line description starting with description: "description here"]
+
+## When to Use
+[When is this skill applicable?]
+
+## Step-by-Step Method
+1. [First step]
+2. [Second step]
+...
+
+## Gotchas
+- [Gotchas and edge cases discovered]
+`;
+    try {
+        const res = await modelProvider.generate("Extract reusable workflows from execution traces in SKILL.md format.", [{ role: "user", content: prompt }], []);
+        const content = res.content || "";
+        const nameMatch = content.match(/^#\s+(.+)$/m);
+        const skillName = nameMatch ? nameMatch[1].trim() : `Learned Skill ${Date.now()}`;
+        // Extract description
+        let description = "Extracted learned workflow.";
+        const descMatch = content.match(/description:\s*["'](.+?)["']/i);
+        if (descMatch) {
+            description = descMatch[1].trim();
+        }
+        else {
+            const lines = content.split("\n");
+            const descLine = lines.find((l) => l.trim() && !l.startsWith("#") && !l.startsWith("##") && !l.startsWith("-"));
+            if (descLine)
+                description = descLine.trim();
+        }
+        const slug = skillName.toLowerCase().replace(/[^a-z0-9\s-]/g, "").trim().replace(/\s+/g, "-");
+        // Similarity check against existing learned skills
+        const agentDir = join(homedir(), ".komorebi", "agents", trace.agentId);
+        const learnedSkillsDir = join(agentDir, "skills", "learned");
+        if (!existsSync(learnedSkillsDir)) {
+            mkdirSync(learnedSkillsDir, { recursive: true });
+        }
+        let isDuplicate = false;
+        let duplicateSlug = "";
+        const existingFolders = readdirSync(learnedSkillsDir);
+        for (const folder of existingFolders) {
+            const skillPath = join(learnedSkillsDir, folder, "SKILL.md");
+            if (existsSync(skillPath)) {
+                try {
+                    const existingContent = readFileSync(skillPath, "utf-8");
+                    const exNameMatch = existingContent.match(/^#\s+(.+)$/m);
+                    const exName = exNameMatch ? exNameMatch[1].trim() : folder;
+                    let exDesc = "";
+                    const exDescMatch = existingContent.match(/description:\s*["'](.+?)["']/i);
+                    if (exDescMatch)
+                        exDesc = exDescMatch[1].trim();
+                    const similarity = calculateTextSimilarity(`${skillName} ${description}`, `${exName} ${exDesc}`);
+                    if (similarity > 0.85) {
+                        isDuplicate = true;
+                        duplicateSlug = folder;
+                        break;
+                    }
+                }
+                catch { }
+            }
+        }
+        if (isDuplicate) {
+            console.log(`[ClosedLearningLoop - ${trace.agentId}] Found highly similar existing skill: ${duplicateSlug}. Consolidating...`);
+            // Consolidate
+            const existingSkillPath = join(learnedSkillsDir, duplicateSlug, "SKILL.md");
+            const existingContent = readFileSync(existingSkillPath, "utf-8");
+            const mergePrompt = `Merge these two highly similar skill playbooks into one single SKILL.md document. Preserve all steps, details, and gotchas. Maintain the standard SKILL.md structure.
+      
+      Skill A:
+      ${existingContent}
+      
+      Skill B:
+      ${content}`;
+            const mergeRes = await modelProvider.generate("Merge similar skills cleanly.", [{ role: "user", content: mergePrompt }], []);
+            if (mergeRes.content) {
+                writeFileSync(existingSkillPath, mergeRes.content, "utf-8");
+                memoryStack.appendDailyLog(`[Learning Loop] Consolidated duplicate skill '${slug}' into '${duplicateSlug}'`);
+            }
+        }
+        else {
+            // Save new learned skill
+            const newSkillDir = join(learnedSkillsDir, slug);
+            mkdirSync(newSkillDir, { recursive: true });
+            writeFileSync(join(newSkillDir, "SKILL.md"), content, "utf-8");
+            console.log(`[ClosedLearningLoop - ${trace.agentId}] Successfully saved learned skill: ${slug}`);
+            memoryStack.appendDailyLog(`[Learning Loop] Extracted and saved learned skill: ${slug}`);
+        }
+    }
+    catch (err) {
+        console.error(`[ClosedLearningLoop - ${trace.agentId}] Skill extraction reflection job failed:`, err.message);
+    }
+}
+export class ProgressiveSkillsLoader {
+    level1Cache = new Map(); // slug -> SKILL.md body
+    level2Cache = new Map(); // slug -> filename -> content
+    loadLevel0Headers(agentId, projectRoot) {
+        const paths = [
+            join(homedir(), ".komorebi", "agents", agentId, "skills", "learned"),
+            join(homedir(), ".komorebi", "agents", agentId, "skills"),
+            join(homedir(), ".komorebi", "shared-skills"),
+            join(homedir(), ".komorebi", "SHARED", "learned-skills"),
+            join(projectRoot, "skills")
+        ];
+        const headers = [];
+        const seenSlugs = new Set();
+        for (const p of paths) {
+            if (!existsSync(p))
+                continue;
+            try {
+                const folders = readdirSync(p, { withFileTypes: true });
+                for (const f of folders) {
+                    if (f.isDirectory() && f.name !== ".clawhub" && f.name !== "learned" && f.name !== "_archive") {
+                        const skillPath = join(p, f.name, "SKILL.md");
+                        if (existsSync(skillPath)) {
+                            const slug = f.name.toLowerCase();
+                            if (seenSlugs.has(slug))
+                                continue;
+                            seenSlugs.add(slug);
+                            const mdContent = readFileSync(skillPath, "utf-8");
+                            const lines = mdContent.split("\n");
+                            let name = f.name;
+                            let description = "Custom skill playbook.";
+                            let whenToUse = "";
+                            for (const line of lines) {
+                                if (line.startsWith("name:") || line.startsWith("title:")) {
+                                    name = line.split(":")[1].trim().replace(/['"]/g, "");
+                                }
+                                if (line.startsWith("description:")) {
+                                    description = line.split(":")[1].trim().replace(/['"]/g, "");
+                                }
+                            }
+                            // Extract "When to Use" section
+                            const whenIdx = lines.findIndex(l => l.toLowerCase().includes("## when to use"));
+                            if (whenIdx !== -1) {
+                                const nextLines = [];
+                                for (let i = whenIdx + 1; i < lines.length; i++) {
+                                    if (lines[i].startsWith("##"))
+                                        break;
+                                    if (lines[i].trim())
+                                        nextLines.push(lines[i].trim());
+                                }
+                                whenToUse = nextLines.join(" ");
+                            }
+                            headers.push({ name, slug, description, whenToUse, path: skillPath });
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+        return headers;
+    }
+    async getLevel1SkillBody(slug, headers) {
+        if (this.level1Cache.has(slug)) {
+            return this.level1Cache.get(slug);
+        }
+        const match = headers.find(h => h.slug === slug);
+        if (match && existsSync(match.path)) {
+            const body = readFileSync(match.path, "utf-8");
+            this.level1Cache.set(slug, body);
+            return body;
+        }
+        return null;
+    }
+    async getLevel2ReferenceFile(slug, filename, headers) {
+        let slugCache = this.level2Cache.get(slug);
+        if (!slugCache) {
+            slugCache = new Map();
+            this.level2Cache.set(slug, slugCache);
+        }
+        if (slugCache.has(filename)) {
+            return slugCache.get(filename);
+        }
+        const match = headers.find(h => h.slug === slug);
+        if (match) {
+            const refPath = join(dirname(match.path), filename);
+            if (existsSync(refPath)) {
+                const body = readFileSync(refPath, "utf-8");
+                slugCache.set(filename, body);
+                return body;
+            }
+        }
+        return null;
+    }
+}
+// 5. Intelligent AGENTS.md / Workspace-File Compaction
+export async function runIntelligentFileCompaction(filePath, newContentToAdd, characterCap, modelProvider, agentId) {
+    const filename = basename(filePath);
+    const currentContent = existsSync(filePath) ? readFileSync(filePath, "utf-8") : "";
+    if (currentContent.length + newContentToAdd.length <= characterCap) {
+        // Fits under budget directly, perform normal append/merge
+        writeFileSync(filePath, currentContent ? `${currentContent}\n\n${newContentToAdd}` : newContentToAdd, "utf-8");
+        return;
+    }
+    console.log(`[ClosedLearningLoop - ${agentId}] File ${filename} exceeds character cap of ${characterCap}. Running Intelligent Compaction...`);
+    // Write timestamped backup to agents/<agentId>/.history/<file>.<timestamp>.bak
+    const historyDir = join(homedir(), ".komorebi", "agents", agentId, ".history");
+    if (!existsSync(historyDir)) {
+        mkdirSync(historyDir, { recursive: true });
+    }
+    const timestamp = Date.now();
+    const backupPath = join(historyDir, `${filename}.${timestamp}.bak`);
+    writeFileSync(backupPath, currentContent, "utf-8");
+    // Keep last 10 backups per file
+    try {
+        const files = readdirSync(historyDir)
+            .filter(f => f.startsWith(filename) && f.endsWith(".bak"))
+            .map(f => ({ name: f, path: join(historyDir, f), time: parseInt(f.split(".")[1] || "0", 10) }))
+            .sort((a, b) => a.time - b.time);
+        while (files.length > 10) {
+            const oldest = files.shift();
+            if (oldest && existsSync(oldest.path)) {
+                try {
+                    const { rmSync } = await import("node:fs");
+                    rmSync(oldest.path);
+                }
+                catch { }
+            }
+        }
+    }
+    catch { }
+    // LLM compaction instructions
+    let instructions = `You are a high-performance compaction engine.
+Merge and compress the existing document content and the new entries to add.
+Preserve every distinct fact, operating rule, and critical setting.
+Remove redundancy, formatting boilerplate, and stale/superseded entries.
+The output MUST be strictly under ${characterCap} characters total.`;
+    if (filename === "MEMORY.md") {
+        instructions += `\nMEMORY.md Rules:
+- If facts conflict, preserve entries with recent last-validated dates.
+- If a new fact seems to directly contradict an existing one, do NOT guess. Instead, preserve both and append a " ⚠️ needs human review" flag at the end of the line.`;
+    }
+    const prompt = `Current file content:
+\`\`\`markdown
+${currentContent}
+\`\`\`
+
+New content to merge & append:
+\`\`\`markdown
+${newContentToAdd}
+\`\`\`
+
+Perform the compaction. Return ONLY the compacted markdown content.`;
+    const compRes = await modelProvider.generate(instructions, [{ role: "user", content: prompt }], []);
+    let compactedText = compRes.content || "";
+    if (compactedText.length > characterCap) {
+        // Safety fallback: hard truncate if LLM fails budget
+        compactedText = compactedText.slice(0, characterCap);
+    }
+    writeFileSync(filePath, compactedText, "utf-8");
+    console.log(`[ClosedLearningLoop - ${agentId}] Completed Intelligent Compaction for ${filename}. Backup: ${basename(backupPath)}`);
+}
+// 6. Session-End closing-reflection hook
+export async function runSessionEndReflection(agentId, sessionId, workspacePath, modelProvider, memoryStack) {
+    console.log(`[ClosedLearningLoop - ${agentId}] Running session-end closing reflection for session ${sessionId}...`);
+    // Load full session history
+    const jsonlPath = join(workspacePath, "session.jsonl");
+    if (!existsSync(jsonlPath))
+        return;
+    let historyText = "";
+    try {
+        const lines = readFileSync(jsonlPath, "utf-8").trim().split("\n");
+        historyText = lines.map(line => {
+            try {
+                const parsed = JSON.parse(line);
+                return `[${parsed.role}]: ${parsed.content || ""}`;
+            }
+            catch {
+                return "";
+            }
+        }).filter(Boolean).join("\n");
+    }
+    catch {
+        return;
+    }
+    const prompt = `Review the following complete conversation history of the agent session:
+${historyText}
+
+Answer two questions:
+1. Did we learn any new persistent facts about the user, system rules, or decisions that belong in MEMORY.md?
+2. Did we discover a repeatable multi-step workflow that should be extracted as a learned skill?
+
+If there are facts for MEMORY.md, prefix them with "MEMORY_FACT: [content]".
+If there is a workflow for a skill, prefix it with "LEARNED_WORKFLOW: [content]".
+Return nothing else. If nothing belongs in memory/skills, respond with "NO_CHANGES".`;
+    try {
+        const res = await modelProvider.generate("Analyze session history for learning and memory opportunities.", [{ role: "user", content: prompt }], []);
+        const reply = res.content || "";
+        if (reply.includes("NO_CHANGES")) {
+            console.log(`[ClosedLearningLoop - ${agentId}] Closing reflection: No new memory or skill candidates found.`);
+            return;
+        }
+        const lines = reply.split("\n");
+        for (const line of lines) {
+            if (line.startsWith("MEMORY_FACT:")) {
+                const fact = line.replace("MEMORY_FACT:", "").trim();
+                console.log(`[ClosedLearningLoop - ${agentId}] Closing reflection extracted memory fact: "${fact}"`);
+                const today = new Date().toISOString().split("T")[0];
+                const formattedFact = `- [source: closing-reflection, date-added: ${today}, last-validated: ${today}] ${fact}`;
+                await runIntelligentFileCompaction(join(workspacePath, "..", "MEMORY.md"), formattedFact, 2500, modelProvider, agentId);
+            }
+            if (line.startsWith("LEARNED_WORKFLOW:")) {
+                const workflowDesc = line.replace("LEARNED_WORKFLOW:", "").trim();
+                // Trigger a background extraction trace job
+                await runReflectionExtraction({
+                    userQuery: "Session closing reflection candidate",
+                    toolCalls: [{ name: "closing_reflection", arguments: {}, output: workflowDesc, isError: false }],
+                    finalResponse: "Extracted workflow: " + workflowDesc,
+                    agentId,
+                    sessionId,
+                    workspacePath
+                }, modelProvider, memoryStack);
+            }
+        }
+    }
+    catch (err) {
+        console.error(`[ClosedLearningLoop - ${agentId}] Session end closing reflection failed:`, err.message);
+    }
+}
+//# sourceMappingURL=learning.js.map

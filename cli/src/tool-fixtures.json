@@ -1,0 +1,50 @@
+{
+  "read_file": {
+    "args": { "path": "string" },
+    "output": "string"
+  },
+  "write_file": {
+    "args": { "path": "string", "content": "string" },
+    "output": "string"
+  },
+  "exec": {
+    "args": { "command": "string" },
+    "output": "string"
+  },
+  "web_search": {
+    "args": { "query": "string" },
+    "output": "string"
+  },
+  "web_fetch": {
+    "args": { "url": "string" },
+    "output": "string"
+  },
+  "memory_search": {
+    "args": { "query": "string" },
+    "output": "string"
+  },
+  "telegram_send": {
+    "args": { "chatId": "number", "text": "string" },
+    "output": "string"
+  },
+  "cron_schedule": {
+    "args": { "expression": "string", "prompt": "string" },
+    "output": "string"
+  },
+  "mcp_call": {
+    "args": { "serverName": "string", "toolName": "string", "arguments": "object" },
+    "output": "string"
+  },
+  "agent_message": {
+    "args": { "recipientId": "string", "message": "string" },
+    "output": "string"
+  },
+  "skills_search": {
+    "args": { "query": "string" },
+    "output": "string"
+  },
+  "skills_install": {
+    "args": { "packageName": "string" },
+    "output": "string"
+  }
+}

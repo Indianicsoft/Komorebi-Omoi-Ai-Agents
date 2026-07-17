@@ -1,0 +1,6 @@
+packages:
+  - 'gateway'
+  - 'channels/*'
+  - 'mcp-connectors'
+  - 'bus'
+  - 'cli'
